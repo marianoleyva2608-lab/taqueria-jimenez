@@ -55,6 +55,7 @@ void main() async {
     await Supabase.initialize(
       url: kSupabaseUrl,
       anonKey: kSupabaseAnonKey,
+      postgrestOptions: PostgrestClientOptions(schema: kSupabaseSchema),
     ).timeout(const Duration(seconds: 10));
   } catch (e) {
     debugPrint('Supabase.initialize tardó demasiado o falló: $e');

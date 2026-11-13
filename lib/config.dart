@@ -13,3 +13,13 @@ String get kSupabaseAnonKey {
   return v.isNotEmpty ? v : const String.fromEnvironment('SUPABASE_ANON_KEY');
 }
 
+
+/// Esquema de Postgres donde viven las tablas. Por defecto 'public'.
+/// Si la taquería comparte proyecto de Supabase con otra app, sus tablas
+/// van en el esquema 'taqueria' (variable SUPABASE_SCHEMA en EasyPanel).
+String get kSupabaseSchema {
+  final v = runtimeEnv('SUPABASE_SCHEMA');
+  if (v.isNotEmpty) return v;
+  const d = String.fromEnvironment('SUPABASE_SCHEMA');
+  return d.isNotEmpty ? d : 'public';
+}

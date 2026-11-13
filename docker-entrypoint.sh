@@ -9,6 +9,7 @@ cat > /usr/share/nginx/html/env-config.js <<EOF
 window.GOOGLE_MAPS_API_KEY = "${GOOGLE_MAPS_API_KEY:-}";
 window.SUPABASE_URL = "${SUPABASE_URL:-}";
 window.SUPABASE_ANON_KEY = "${SUPABASE_ANON_KEY:-}";
+window.SUPABASE_SCHEMA = "${SUPABASE_SCHEMA:-}";
 EOF
 
 echo "env-config.js generado:"
