@@ -8,6 +8,7 @@ Incluye: mesero con PIN y comandas por mesa, para llevar y domicilio, cocina (pa
 
 En el **SQL Editor** del proyecto de la taquería, ejecuta en este orden:
 
+0. Lo más fácil: pega `supabase/taqueria/TODO_EN_UNO.sql` completo (o en orden los dos de abajo).
 1. `supabase/taqueria/00_esquema.sql`: crea las tablas, las políticas y el realtime (copiados de las gorditas).
 2. `supabase/taqueria/01_datos_taqueria.sql`: sucursal, accesos iniciales, 10 mesas y el menú con los precios de la pared.
 

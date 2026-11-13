@@ -30,7 +30,8 @@ select n, 'Sucursal Principal', 'free', 50.0, 50.0 from generate_series(1,10) n
 where not exists (select 1 from restaurant_tables where branch_name='Sucursal Principal');
 
 -- Menú (65 productos). Bebidas: darlas de alta desde Admin con su precio.
-insert into dishes (name, description, price, cost, category, requires_guisado, max_time) values
+insert into dishes (name, description, price, cost, category, requires_guisado, max_time)
+select * from (values
   ('Taco de Pastor', '', 15, 0, 'tacos', false, 5),
   ('Taco de Chorizo', '', 15, 0, 'tacos', false, 5),
   ('Taco de Buche', '', 15, 0, 'tacos', false, 5),
@@ -95,4 +96,6 @@ insert into dishes (name, description, price, cost, category, requires_guisado, 
   ('Kilo de Costilla', '1 kg', 500, 0, 'kilos', false, 15),
   ('Kilo de Lengua', '1 kg', 650, 0, 'kilos', false, 15),
   ('Taconmadre sencillo', 'Tortilla de harina, queso, pastor, piña y tocino', 50, 0, 'taconmadre', false, 8),
-  ('Taconmadre doble', 'Tortilla de harina, queso, pastor, piña y tocino', 60, 0, 'taconmadre', false, 8);
+  ('Taconmadre doble', 'Tortilla de harina, queso, pastor, piña y tocino', 60, 0, 'taconmadre', false, 8)
+) v(name, description, price, cost, category, requires_guisado, max_time)
+where not exists (select 1 from dishes);
