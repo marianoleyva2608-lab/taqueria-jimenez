@@ -1,0 +1,575 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'client_home_view.dart';
+import 'comandas_view.dart';
+import 'kitchen_view.dart';
+import 'admin_view.dart';
+import '../globals.dart';
+import '../utils/app_updater.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+
+/// Enlace público para que los clientes hagan su pedido (To Go / Domicilio).
+/// En web usa el mismo dominio donde corre la app; en APK se pasa con
+/// --dart-define=CLIENT_ORDER_URL=https://.../#/client
+String get kClientOrderUrl {
+  const fromDefine = String.fromEnvironment('CLIENT_ORDER_URL');
+  if (fromDefine.isNotEmpty) return fromDefine;
+  if (kIsWeb) return '${Uri.base.origin}/#/client';
+  return 'https://taqueriajimenez.com/#/client';
+}
+
+class RoleSelectionView extends StatefulWidget {
+  const RoleSelectionView({super.key});
+
+  @override
+  State<RoleSelectionView> createState() => _RoleSelectionViewState();
+}
+
+class _RoleSelectionViewState extends State<RoleSelectionView> {
+  // --- Valores por defecto para credenciales de seguridad ---
+  // Cambiar aquí si se necesita un fallback distinto al valor en DB.
+  static const String _defaultMasterPin = '0000';
+  static const String _defaultAdminUser = 'admin';
+  static const String _defaultAdminPass = '1234';
+  // ---------------------------------------------------------
+
+  final _supabase = Supabase.instance.client;
+  bool _isLoading = false;
+  bool _hasSelectedBranch = false;
+  bool _entered = false;
+
+  String _masterPin = _defaultMasterPin;
+  String _kitchenPin = _defaultMasterPin;
+  String _barPin = _defaultMasterPin;
+  String _adminUser = _defaultAdminUser;
+  String _adminPass = _defaultAdminPass;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSecuritySettings();
+  }
+
+  Future<void> _loadSecuritySettings() async {
+    try {
+      final settings = await _supabase
+          .from('admin_settings')
+          .select('setting_key, setting_value')
+          .or('setting_key.eq.master_pin,setting_key.eq.admin_user,setting_key.eq.admin_pass,setting_key.eq.kitchen_pin,setting_key.eq.bar_pin');
+      for (final row in settings) {
+        final key = row['setting_key'] as String;
+        final value = row['setting_value'] as String? ?? '';
+        if (value.isEmpty) continue;
+        if (key == 'master_pin') _masterPin = value;
+        if (key == 'admin_user') _adminUser = value;
+        if (key == 'admin_pass') _adminPass = value;
+        if (key == 'kitchen_pin') _kitchenPin = value;
+        if (key == 'bar_pin') _barPin = value;
+      }
+    } catch (e) {
+      // Si falla la carga, se usan los defaults definidos arriba.
+      debugPrint('Error loading security settings: $e');
+    }
+  }
+
+  Future<void> _requirePin(BuildContext context, VoidCallback onAuthenticated, {String? pinToCheck}) async {
+    String pin = '';
+    final effectivePin = pinToCheck ?? _masterPin;
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ingrese PIN de Acceso'),
+        content: TextField(
+          autofocus: true,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          maxLength: 4,
+          onChanged: (v) => pin = v,
+          onSubmitted: (_) {
+            if (pin == effectivePin) {
+              Navigator.pop(context);
+              onAuthenticated();
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PIN Incorrecto')));
+            }
+          },
+          decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '####'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () {
+              if (pin == effectivePin) {
+                Navigator.pop(context);
+                onAuthenticated();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PIN Incorrecto')));
+              }
+            },
+            child: const Text('Ingresar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _requireWaiterPin(BuildContext context, Function(String) onAuthenticated) async {
+    String pin = '';
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ingrese PIN de Mesero'),
+        content: TextField(
+          autofocus: true,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          maxLength: 4,
+          onChanged: (v) => pin = v,
+          onSubmitted: (_) async {
+            try {
+              final response = await _supabase.from('waiters').select().eq('pin', pin).eq('branch_name', Globals.currentBranch).maybeSingle();
+              if (response != null) {
+                Navigator.pop(context);
+                onAuthenticated(response['id'].toString());
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PIN de mesero no válido para esta sucursal')));
+              }
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+            }
+          },
+          decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '####'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                final response = await _supabase.from('waiters').select().eq('pin', pin).eq('branch_name', Globals.currentBranch).maybeSingle();
+                if (response != null) {
+                  Navigator.pop(context);
+                  onAuthenticated(response['id'].toString());
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PIN de mesero no válido para esta sucursal')));
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+              }
+            },
+            child: const Text('Entrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _requireAdminLogin(BuildContext context, VoidCallback onAuthenticated) async {
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            Future<void> attemptLogin() async {
+              if (_isLoading) return;
+              final email = emailController.text.trim();
+              final password = passwordController.text.trim();
+
+              setState(() => _isLoading = true);
+              try {
+                // 1. CREDENCIALES ADMIN CARGADAS DESDE DB (via _loadSecuritySettings)
+                if (email == _adminUser && password == _adminPass) {
+                  Navigator.pop(context);
+                  onAuthenticated();
+                  return;
+                }
+
+                // 2. CHECK AGAINST admin_users TABLE (multi-admin support)
+                final adminUserResult = await _supabase
+                    .from('admin_users')
+                    .select()
+                    .eq('username', email)
+                    .eq('password', password)
+                    .maybeSingle();
+
+                if (adminUserResult != null) {
+                  Navigator.pop(context);
+                  onAuthenticated();
+                  return;
+                }
+
+                // 3. CHECK IF IT IS A REGISTERED CASHIER PIN
+                final cashierResponse = await _supabase
+                    .from('waiters')
+                    .select()
+                    .eq('pin', password)
+                    .eq('branch_name', Globals.currentBranch)
+                    .maybeSingle();
+
+                if (cashierResponse != null && cashierResponse['name'].toString().startsWith('CAJERO:')) {
+                  Navigator.pop(context);
+                  onAuthenticated();
+                  return;
+                }
+
+                // 4. ATTEMPT FULL EMAIL/PASS AUTH
+                if (email.isNotEmpty) {
+                  final authResponse = await _supabase.auth.signInWithPassword(
+                    email: email,
+                    password: password,
+                  );
+                  if (authResponse.user != null) {
+                    Navigator.pop(context);
+                    onAuthenticated();
+                    return;
+                  }
+                }
+                
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Acceso denegado (PIN o Credenciales incorrectas)')));
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                }
+              } finally {
+                if (context.mounted) setState(() => _isLoading = false);
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Acceso Administrativo'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    autofocus: true,
+                    controller: emailController, 
+                    decoration: const InputDecoration(labelText: 'Usuario/Email')
+                  ),
+                  TextField(
+                    controller: passwordController, 
+                    obscureText: true, 
+                    decoration: const InputDecoration(labelText: 'Contraseña'),
+                    onSubmitted: (_) => attemptLogin(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : attemptLogin,
+                  child: _isLoading 
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Ingresar'),
+                ),
+              ]
+            );
+          }
+        );
+      }
+    );
+  }
+
+  void _openClientOrder(BuildContext context) {
+    Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const ClientHomeView()));
+  }
+
+  void _showClientQr(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFFFFF8E7),
+        title: const Text('Escanea y haz tu pedido',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: Color(0xFFC8102E), fontWeight: FontWeight.w900)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.all(12),
+              child: QrImageView(
+                data: kClientOrderUrl,
+                version: QrVersions.auto,
+                size: 260,
+                backgroundColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text('Para llevar  •  Servicio a domicilio',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            const Text('Paga con tarjeta desde tu celular',
+                style: TextStyle(color: Color(0xFFC8102E))),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar')),
+        ],
+      ),
+    );
+  }
+
+  /// Bloque "Pide en línea": botón para hacer el pedido aquí mismo y botón
+  /// para mostrar el QR al cliente. Va en la página principal y en tablets.
+  Widget _clientOrderBlock(BuildContext context, bool isMobile) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFC8102E).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFC8102E).withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('¿Quieres pedir?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: isMobile ? 16 : 18,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF3D2E1A))),
+          const SizedBox(height: 4),
+          const Text('Escanea el QR para pedir desde tu celular',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: Color(0xFFA08F70))),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => _showClientQr(context),
+            icon: const Icon(Icons.qr_code),
+            label: const Text('Mostrar QR para pedir desde el celular'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFC8102E),
+              side: const BorderSide(color: Color(0xFFC8102E)),
+              minimumSize: const Size(double.infinity, 48),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFF8E7),
+      body: Center(
+        child: SingleChildScrollView(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 450),
+            padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24, vertical: 32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // LOGO
+                Image.asset('assets/images/logo.png', height: isMobile ? 120 : 160),
+                const SizedBox(height: 16),
+
+                Text(
+                  'Taquería Jiménez',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: isMobile ? 24 : 32, fontWeight: FontWeight.w900, color: Color(0xFFC8102E), letterSpacing: -0.5),
+                ),
+                const SizedBox(height: 32),
+                
+                // PHASE 1: SELECT BRANCH
+                if (!_entered) ...[
+                  Text('¿En qué sucursal te encuentras?', style: TextStyle(color: const Color(0xFFA08F70), fontSize: isMobile ? 14 : 16)),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E7),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFE5DCC4), width: 1.5),
+                    ),
+                    child: Row(
+                      children: Globals.branches.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final branch = entry.value;
+                        return Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(left: index > 0 ? 8 : 0),
+                            child: _BranchButton(
+                              title: branch,
+                              isSelected: Globals.currentBranch == branch,
+                              onTap: () async {
+                                await Globals.setBranch(branch);
+                                setState(() => _hasSelectedBranch = true);
+                              },
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  // "ENTRAR" / "INGRESAR" BUTTON
+                  if (_hasSelectedBranch)
+                    ElevatedButton(
+                      onPressed: () => setState(() => _entered = true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFC8102E),
+                        foregroundColor: Color(0xFFFFF8E7),
+                        minimumSize: const Size(double.infinity, 64),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 12,
+                        shadowColor: const Color(0xFFC8102E).withOpacity(0.4),
+                      ),
+                      child: Text('INGRESAR A SUCURSAL', style: TextStyle(fontSize: isMobile ? 15 : 18, fontWeight: FontWeight.bold)),
+                    ),
+                ],
+                
+                // PHASE 2: SHOW ROLES
+                if (_entered) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.store, color: Color(0xFFC8102E), size: 16),
+                      const SizedBox(width: 8),
+                      Text(Globals.currentBranch, style: const TextStyle(color: Color(0xFFC8102E), fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(width: 16),
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _entered = false;
+                        }),
+                        child: const Text('Cambiar', style: TextStyle(color: Color(0xFFC8102E))),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                  // Ocultados por requerimiento — se acceden por otras vías
+                  // (impresión física en Raspberry Pi, QR de mesa, etc.).
+                  // Solo dejamos Mesero y Caja/Admin en el selector.
+                  //
+                  // _RoleCard: Cliente / Menú Digital → ver ClientHomeView
+                  //   ocultado. Los clientes entran vía QR de mesa (/#/client).
+                  // _RoleCard: Línea de Producción → ocultado, se usa la
+                  //   impresora térmica de rasp2.
+                  // _RoleCard: Cocina To Go → ocultado, se usa rasp3.
+                  // _RoleCard: Bar / Bebidas → ocultado, se usa rasp1.
+                  _RoleCard(
+                    title: 'Mesero',
+                    subtitle: 'Tomar comandas y mesas',
+                    icon: Icons.tablet_mac,
+                    onTap: () {
+                      _requireWaiterPin(context, (waiterId) {
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => ComandasView(waiterId: waiterId)));
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  _RoleCard(
+                    title: 'Caja / Administrador',
+                    subtitle: 'Cobros y reportes de ventas',
+                    icon: Icons.point_of_sale,
+                    onTap: () {
+                      _requireAdminLogin(context, () {
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminView()));
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 32),
+                  _clientOrderBlock(context, isMobile),
+                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  const UpdateAppButton(compact: true),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BranchButton extends StatelessWidget {
+  final String title;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _BranchButton({required this.title, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFC8102E) : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          title,
+          textAlign: TextAlign.center,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 2,
+          style: TextStyle(color: isSelected ? Color(0xFFFFF8E7) : const Color(0xFFA08F70), fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, fontSize: 14),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoleCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _RoleCard({required this.title, required this.subtitle, required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5DCC4)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: const Color(0xFFFFF8E7), borderRadius: BorderRadius.circular(12)),
+                  child: Icon(icon, color: const Color(0xFFC8102E), size: 28),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFC8102E)), overflow: TextOverflow.ellipsis),
+                      Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFFA08F70)), overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Color(0xFFD8CBA8)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

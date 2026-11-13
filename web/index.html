@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- Sin zoom automático al escribir en los campos (iPhone hace zoom en
+       inputs con letra chica, sobre todo en los datos de la tarjeta). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Punto de venta Taquería Jiménez">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Taquería Jiménez">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=3">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png?v=3"/>
+
+  <title>Taquería Jiménez</title>
+  <link id="pwa-manifest" rel="manifest" href="manifest.json">
+  <script>
+    // Selecciona el manifest correcto según la sucursal en la URL
+    // Ej: /#/Maravillas/mesero  →  manifest-maravillas.json
+    (function () {
+      try {
+        var hash = window.location.hash || '';
+        var m = hash.match(/[#\/]+([^\/]+)\/mesero/i);
+        if (m) {
+          var slug = m[1].toLowerCase();
+          document.getElementById('pwa-manifest').href = 'manifest-' + slug + '.json';
+        }
+      } catch (e) {}
+    })();
+  </script>
+
+  <!-- Clip SDK -->
+  <script src="https://sdk.clip.mx/js/clip-sdk.js"></script>
+  <style>
+    #__clip_portal__ iframe { border: none !important; width: 100% !important; min-height: 300px !important; display: block !important; }
+  </style>
+</head>
+<body>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script>
+    // Desregistrar Service Workers y limpiar caché en cada carga para garantizar código fresco
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async function () {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const r of regs) await r.unregister();
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+      });
+    }
+
+    // Función global para limpiar caché y recargar — llamada desde Flutter vía dart:js
+    window.forceUpdate = async function() {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const r of regs) await r.unregister();
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+      } catch(e) {
+        console.warn('forceUpdate error:', e);
+      }
+      window.location.reload(true);
+    };
+  </script>
+  <script>
+    // ── Puente Flutter ↔ Clip ────────────────────────────────────
+    let _clipCard = null;
+    const _CLIP_PORTAL_ID = '__clip_portal__';
+
+    window.addEventListener('message', function(evt) {
+      if (!evt.data) return;
+      const d = typeof evt.data === 'object' ? evt.data : {};
+      if (d.type === 'card-token-exception' || (Object.prototype.hasOwnProperty.call(d, 'error') && (d.type === null || d.type === undefined))) {
+        const code = d.code || '';
+        const msg = code ? 'Tarjeta rechazada (' + code + ')' : 'Datos de tarjeta inválidos';
+        window._clipErrorHandled = true;
+        if (window._clipOnError) window._clipOnError(msg);
+        return;
+      }
+      if (d.type === 'clip:token' || d.tokenId || d.token_id || (d.token && d.token.id)) {
+        const tokenId = d.tokenId ?? d.token_id ?? d.token?.id;
+        if (tokenId && window._clipOnSubmit) {
+          window._clipOnSubmit(JSON.stringify({ token_id: tokenId }));
+        }
+      }
+    });
+
+    window.clipInitBrick = function(containerId, apiKey, amount) {
+      if (_clipCard) { try { _clipCard.unmount(); } catch(e) {} _clipCard = null; }
+      const old = document.getElementById(_CLIP_PORTAL_ID);
+      if (old) old.remove();
+      const portal = document.createElement('div');
+      portal.id = _CLIP_PORTAL_ID;
+      document.body.appendChild(portal);
+
+      function tryMount(retries) {
+        const placeholder = document.getElementById(containerId);
+        if (!placeholder) {
+          if (retries > 0) { setTimeout(() => tryMount(retries - 1), 150); return; }
+          if (window._clipOnError) window._clipOnError('No se encontró el placeholder de Clip');
+          return;
+        }
+        const rect = placeholder.getBoundingClientRect();
+        portal.style.cssText = [
+          'position:fixed',
+          'top:' + rect.top + 'px',
+          'left:' + rect.left + 'px',
+          'width:' + rect.width + 'px',
+          'min-height:' + rect.height + 'px',
+          'background:white',
+          'z-index:9999',
+          'max-height:calc(100vh - ' + Math.max(0, rect.top) + 'px - 8px)',
+          'overflow-y:auto',
+          'padding-bottom:12px',
+          'box-sizing:border-box',
+        ].join(';');
+        // El formulario de la tarjeta va en su propio contenedor y el botón
+        // "Pagar con tarjeta" justo debajo, dentro del mismo recuadro.
+        const cardMount = document.createElement('div');
+        cardMount.id = '__clip_card_mount__';
+        portal.appendChild(cardMount);
+
+        try {
+          // Inicialización oficial: solo la API key. Con una llave test_ el SDK ya
+          // opera en pruebas; { env: 'sandbox' } generaba tokens que /payments
+          // rechazaba ("payment_method.token is not a valid UUID v4").
+          const sdk = new ClipSDK(apiKey);
+          const card = sdk.element.create('Card', {
+            locale: 'es',
+            paymentAmount: parseFloat(amount),
+            terms: { enabled: false },
+          });
+          _clipCard = card;
+          card.mount('__clip_card_mount__');
+
+          function _disableFlutterInput() {
+            document.querySelectorAll('flt-glass-pane').forEach(function(el) {
+              el._prevPointerEvents = el.style.pointerEvents;
+              el.style.pointerEvents = 'none';
+            });
+            document.querySelectorAll('flt-text-editing-host, flt-text-editing').forEach(function(el) {
+              el._prevDisplay = el.style.display;
+              el.style.display = 'none';
+            });
+          }
+          function _enableFlutterInput() {
+            document.querySelectorAll('flt-glass-pane').forEach(function(el) {
+              el.style.pointerEvents = el._prevPointerEvents ?? '';
+            });
+            document.querySelectorAll('flt-text-editing-host, flt-text-editing').forEach(function(el) {
+              el.style.display = el._prevDisplay ?? '';
+            });
+          }
+          _disableFlutterInput();
+          window._clipUnblockKeyboard = _enableFlutterInput;
+
+          const obs = new MutationObserver(function() {
+            const iframe = portal.querySelector('iframe');
+            if (iframe) {
+              iframe.style.pointerEvents = 'auto';
+              iframe.focus();
+              obs.disconnect();
+            }
+          });
+          obs.observe(portal, { childList: true, subtree: true });
+
+          const nativeBtn = document.createElement('button');
+          nativeBtn.id = '__clip_native_btn__';
+          nativeBtn.textContent = 'Pagar con tarjeta';
+          nativeBtn.style.cssText = [
+            'display:block', 'margin:12px auto 0', 'font-family:inherit',
+            'background:#FC4C02', 'color:white', 'border:none', 'border-radius:28px',
+            'padding:16px 0', 'font-size:16px', 'font-weight:bold', 'cursor:pointer',
+            'width:92%', 'max-width:420px', 'box-shadow:0 4px 12px rgba(0,0,0,0.2)'
+          ].join(';');
+          nativeBtn.addEventListener('click', async function() {
+            if (!_clipCard) return;
+            nativeBtn.disabled = true;
+            nativeBtn.textContent = 'Procesando...';
+            window.clipResetZoom();
+            window.clipShowLoading('Procesando pago…');
+            try {
+              const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tiempo agotado')), 15000));
+              const tokenResult = await Promise.race([_clipCard.cardToken(), timeout]);
+              const tokenId = (typeof tokenResult === 'string') ? tokenResult : (tokenResult?.id ?? tokenResult?.token?.id ?? tokenResult?.token);
+              console.log('[clip] cardToken ->', typeof tokenResult, tokenResult && Object.keys(tokenResult), String(tokenId).slice(0, 8));
+              if (!tokenId) throw new Error('No se recibió token');
+              if (window._clipOnSubmit) window._clipOnSubmit(JSON.stringify({ token_id: tokenId }));
+            } catch(e) {
+              nativeBtn.disabled = false;
+              nativeBtn.textContent = 'Pagar con tarjeta';
+              window.clipHideLoading();
+              if (window._clipOnError) window._clipOnError(e.message || 'Error al procesar');
+            }
+          });
+          portal.appendChild(nativeBtn);
+          window._clipNativeBtn = nativeBtn;
+
+          setTimeout(() => { if (window._clipOnReady) window._clipOnReady(); }, 2000);
+        } catch(e) {
+          if (window._clipOnError) window._clipOnError(e.message || 'Error al inicializar Clip');
+        }
+      }
+      tryMount(20);
+    };
+
+    // 3D Secure de Clip: iframe a pantalla completa con la página del banco.
+    // Se cierra cuando Clip avisa por postMessage o cuando Flutter llama
+    // clipHide3DS() al obtener el estado final del pago.
+    window.clipShow3DS = function(url) {
+      window.clipHide3DS();
+      const wrap = document.createElement('div');
+      wrap.id = '__clip_3ds__';
+      wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:20000;display:flex;align-items:center;justify-content:center;';
+      const frame = document.createElement('iframe');
+      frame.src = url;
+      frame.title = 'cybersource3Ds';
+      frame.style.cssText = 'width:min(96vw,600px);height:min(92vh,700px);border:none;border-radius:12px;background:white;';
+      wrap.appendChild(frame);
+      document.body.appendChild(wrap);
+      if (window._clipNativeBtn) window._clipNativeBtn.style.display = 'none';
+      let origin = null;
+      try { origin = new URL(url).origin; } catch (e) {}
+      window._clip3dsListener = function(ev) {
+        if (origin && ev.origin === origin) window.clipHide3DS();
+      };
+      window.addEventListener('message', window._clip3dsListener);
+    };
+    window.clipHide3DS = function() {
+      try { window.clipResetZoom(); } catch (e) {}
+      const old = document.getElementById('__clip_3ds__');
+      if (old) old.remove();
+      if (window._clip3dsListener) {
+        window.removeEventListener('message', window._clip3dsListener);
+        window._clip3dsListener = null;
+      }
+    };
+
+    window.clipSubmitPago = async function() {
+      if (!_clipCard) { if (window._clipOnError) window._clipOnError('SDK de Clip no inicializado'); return; }
+      window._clipErrorHandled = false;
+      try {
+        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('__TIMEOUT__')), 15000));
+        const tokenResult = await Promise.race([_clipCard.cardToken(), timeout]);
+        const tokenId = (typeof tokenResult === 'string') ? tokenResult : (tokenResult?.id ?? tokenResult?.token?.id ?? tokenResult?.token);
+              console.log('[clip] cardToken ->', typeof tokenResult, tokenResult && Object.keys(tokenResult), String(tokenId).slice(0, 8));
+        if (!tokenId) throw new Error('No se recibió token de la tarjeta');
+        if (window._clipOnSubmit) window._clipOnSubmit(JSON.stringify({ token_id: tokenId }));
+      } catch(e) {
+        if (!window._clipErrorHandled) {
+          const msg = e.message === '__TIMEOUT__' ? 'Sin respuesta de Clip' : (e.message || 'Error al procesar tarjeta');
+          if (window._clipOnError) window._clipOnError(msg);
+        }
+      }
+    };
+
+    // Pantalla de carga a todo lo ancho mientras se cobra (solo un círculo).
+    // Queda debajo de la verificación 3D Secure del banco (z-index 20000).
+    window.clipShowLoading = function(msg) {
+      let ov = document.getElementById('__clip_loading__');
+      if (!ov) {
+        if (!document.getElementById('__clip_spin_css__')) {
+          const st = document.createElement('style');
+          st.id = '__clip_spin_css__';
+          st.textContent = '@keyframes __clipspin{to{transform:rotate(360deg)}}';
+          document.head.appendChild(st);
+        }
+        ov = document.createElement('div');
+        ov.id = '__clip_loading__';
+        ov.style.cssText = 'position:fixed;inset:0;background:#FFF8E7;z-index:15000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;font-family:Roboto,Arial,sans-serif;';
+        const sp = document.createElement('div');
+        sp.style.cssText = 'width:64px;height:64px;border:6px solid #F3D6BF;border-top-color:#C8102E;border-radius:50%;animation:__clipspin 0.9s linear infinite;';
+        const tx = document.createElement('div');
+        tx.id = '__clip_loading_text__';
+        tx.style.cssText = 'color:#3D2E1A;font-size:17px;font-weight:600;';
+        ov.appendChild(sp); ov.appendChild(tx);
+        document.body.appendChild(ov);
+      }
+      document.getElementById('__clip_loading_text__').textContent = msg || 'Procesando pago…';
+    };
+    // iPhone acerca la pantalla al escribir en los campos de la tarjeta
+    // (vienen en un iframe de Clip y el meta viewport no siempre lo evita).
+    // Al terminar de escribir, quitamos el foco y forzamos a Safari a volver
+    // a la escala normal reescribiendo el meta viewport.
+    let __zoomToggle = false;
+    window.clipResetZoom = function() {
+      try { if (document.activeElement) document.activeElement.blur(); } catch (e) {}
+      __zoomToggle = !__zoomToggle;
+      const content = __zoomToggle
+        ? 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no'
+        : 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+      document.querySelectorAll('meta[name="viewport"]').forEach(function(m) {
+        m.setAttribute('content', content);
+      });
+      try { window.scrollTo(0, 0); } catch (e) {}
+    };
+    // Cuando el cliente toca fuera del iframe de la tarjeta (el foco regresa
+    // a la página), también se regresa la escala.
+    window.addEventListener('focus', function() { setTimeout(window.clipResetZoom, 50); });
+
+    window.clipHideLoading = function() {
+      try { window.clipResetZoom(); } catch (e) {}
+      const ov = document.getElementById('__clip_loading__');
+      if (ov) ov.remove();
+    };
+
+    window.clipUnmount = function() {
+      if (_clipCard) { try { _clipCard.unmount(); } catch(e) {} _clipCard = null; }
+      const portal = document.getElementById(_CLIP_PORTAL_ID);
+      if (portal) portal.remove();
+      if (window._clipNativeBtn) { window._clipNativeBtn.remove(); window._clipNativeBtn = null; }
+      if (window._clipUnblockKeyboard) { window._clipUnblockKeyboard(); window._clipUnblockKeyboard = null; }
+    };
+  </script>
+  <!-- env-config.js es generado por docker-entrypoint.sh en cada arranque
+       del container con las variables de entorno (ej. GOOGLE_MAPS_API_KEY).
+       Se carga ANTES de Flutter para que window.* esté disponible. -->
+  <script src="env-config.js"></script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
