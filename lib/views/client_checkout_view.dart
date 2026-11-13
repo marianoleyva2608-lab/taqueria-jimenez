@@ -1,3 +1,4 @@
+import '../config.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -171,6 +172,38 @@ class _ClientCheckoutViewState extends State<ClientCheckoutView> {
               'cantidad': it.quantity,
             })
         .toList();
+
+    // Modo de pruebas: sin Clip, se aprueba el pago con un botón.
+    if (kPagosSimulados) {
+      final ok = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFFFFF8E7),
+          title: const Text('Pago SIMULADO',
+              style: TextStyle(color: Color(0xFFC8102E))),
+          content: Text(
+              'Modo de pruebas: no se cobra nada.\n\nTotal: \$${finalTotal.toStringAsFixed(2)}',
+              style: const TextStyle(color: Color(0xFF3D2E1A))),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Rechazar')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Aprobar pago')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      await _createOrderAndNotify(
+        cart: cart,
+        finalTotal: finalTotal,
+        paymentMethodForDb: 'clip',
+        onAfterCreate: () async {},
+      );
+      return;
+    }
 
     setState(() => _clipDialogOpen = true);
     ClipResult? result;

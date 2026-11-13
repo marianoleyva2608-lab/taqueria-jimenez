@@ -23,3 +23,11 @@ String get kSupabaseSchema {
   const d = String.fromEnvironment('SUPABASE_SCHEMA');
   return d.isNotEmpty ? d : 'public';
 }
+
+/// Modo de pruebas sin Clip: PAGOS_SIMULADOS=true en EasyPanel.
+/// El pago en línea del cliente se aprueba con un botón, sin cobrar.
+bool get kPagosSimulados {
+  final v = runtimeEnv('PAGOS_SIMULADOS');
+  if (v.isNotEmpty) return v.toLowerCase() == 'true';
+  return const bool.fromEnvironment('PAGOS_SIMULADOS');
+}

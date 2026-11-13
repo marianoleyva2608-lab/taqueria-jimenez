@@ -10,6 +10,7 @@ window.GOOGLE_MAPS_API_KEY = "${GOOGLE_MAPS_API_KEY:-}";
 window.SUPABASE_URL = "${SUPABASE_URL:-}";
 window.SUPABASE_ANON_KEY = "${SUPABASE_ANON_KEY:-}";
 window.SUPABASE_SCHEMA = "${SUPABASE_SCHEMA:-}";
+window.PAGOS_SIMULADOS = "${PAGOS_SIMULADOS:-}";
 EOF
 
 echo "env-config.js generado:"
