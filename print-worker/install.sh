@@ -28,7 +28,13 @@ ENV_FILE="$SCRIPT_DIR/.env"
 if [[ -f "$ENV_FILE" ]]; then
   say "Ya existe un .env en $SCRIPT_DIR — vuelvo a preguntar (Enter para mantener el valor actual)."
   # shellcheck disable=SC1090
-  set -a; source "$ENV_FILE"; set +a
+  # Lee el .env línea por línea (sin `source`), así valores con espacios
+  # sin comillas (p.ej. BRANCH_NAME=Sucursal Principal) no rompen el script.
+  while IFS='=' read -r k v; do
+    [[ "$k" =~ ^[A-Z_][A-Z0-9_]*$ ]] || continue
+    v="${v%\"}"; v="${v#\"}"
+    export "$k=$v"
+  done < "$ENV_FILE"
 fi
 
 # ── Node.js (Raspberry Pi OS suele traer una versión vieja) ──────────
@@ -124,8 +130,8 @@ SUPABASE_URL=$SUPABASE_URL
 SUPABASE_SERVICE_KEY=$SUPABASE_SERVICE_KEY
 SUPABASE_SCHEMA=$SUPABASE_SCHEMA
 PRINTER_DEVICE=$PRINTER_DEVICE
-BRANCH_NAME=$BRANCH_NAME
-RESTAURANT_NAME=$RESTAURANT_NAME
+BRANCH_NAME="$BRANCH_NAME"
+RESTAURANT_NAME="$RESTAURANT_NAME"
 PRINT_AREA=$PRINT_AREA
 PRINT_ORDER_TYPES=$PRINT_ORDER_TYPES
 DRY_RUN=false
