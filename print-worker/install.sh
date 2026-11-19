@@ -59,6 +59,13 @@ read -r -p "SUPABASE_SERVICE_KEY${SUPABASE_SERVICE_KEY:+ [Enter = mantener la ac
 SUPABASE_SERVICE_KEY="${IN:-${SUPABASE_SERVICE_KEY:-}}"
 [[ -n "$SUPABASE_SERVICE_KEY" ]] || die "Sin SUPABASE_SERVICE_KEY no podemos seguir."
 
+DEFAULT_SCHEMA="${SUPABASE_SCHEMA:-public}"
+echo
+echo "SUPABASE_SCHEMA: 'public' si el proyecto es solo de este negocio;"
+echo "'taqueria' si es un proyecto compartido (igual que SUPABASE_SCHEMA en Easypanel)."
+read -r -p "SUPABASE_SCHEMA [$DEFAULT_SCHEMA]: " IN
+SUPABASE_SCHEMA="${IN:-$DEFAULT_SCHEMA}"
+
 DEFAULT_BRANCH="${BRANCH_NAME:-Sucursal Maravillas}"
 echo
 echo "BRANCH_NAME debe coincidir EXACTO con orders.branch_name (incluye el"
@@ -115,6 +122,7 @@ say "Guardando configuración en $ENV_FILE"
 cat > "$ENV_FILE" <<EOF
 SUPABASE_URL=$SUPABASE_URL
 SUPABASE_SERVICE_KEY=$SUPABASE_SERVICE_KEY
+SUPABASE_SCHEMA=$SUPABASE_SCHEMA
 PRINTER_DEVICE=$PRINTER_DEVICE
 BRANCH_NAME=$BRANCH_NAME
 RESTAURANT_NAME=$RESTAURANT_NAME

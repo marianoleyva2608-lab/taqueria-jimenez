@@ -42,7 +42,10 @@ const {
   PRINT_AREA,   // '', 'drinks' o 'kitchen' — ver abajo
   BRANCH_NAME,
   DRY_RUN,
+  SUPABASE_SCHEMA, // 'public' (default) o 'taqueria' si el proyecto es compartido
 } = process.env;
+
+const dbSchema = (SUPABASE_SCHEMA || 'public').trim() || 'public';
 
 // PRINT_AREA filtra qué items imprime esta Pi. Permite dividir la
 // misma sucursal en varias Pis, cada una imprimiendo solo su parte:
@@ -197,6 +200,7 @@ const printerTarget = PRINTER_DEVICE || PRINTER_NAME || '';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
+  db: { schema: dbSchema },
   realtime: wsTransport ? { transport: wsTransport } : undefined,
 });
 
@@ -1363,7 +1367,7 @@ function subscribeRealtimeCorteRequests() {
       'postgres_changes',
       {
         event: 'INSERT',
-        schema: 'public',
+        schema: dbSchema,
         table: 'corte_requests',
         filter: `branch_name=eq.${BRANCH_NAME}`,
       },
@@ -1463,7 +1467,7 @@ function subscribeRealtimeReceipts() {
       'postgres_changes',
       {
         event: 'UPDATE',
-        schema: 'public',
+        schema: dbSchema,
         table: 'orders',
         filter: `branch_name=eq.${BRANCH_NAME}`,
       },
@@ -1499,7 +1503,7 @@ function subscribeRealtime() {
       'postgres_changes',
       {
         event: 'INSERT',
-        schema: 'public',
+        schema: dbSchema,
         table: 'orders',
         filter: `branch_name=eq.${BRANCH_NAME}`,
       },
@@ -1515,7 +1519,7 @@ function subscribeRealtime() {
       'postgres_changes',
       {
         event: 'UPDATE',
-        schema: 'public',
+        schema: dbSchema,
         table: 'orders',
         filter: `branch_name=eq.${BRANCH_NAME}`,
       },
@@ -1591,7 +1595,7 @@ async function main() {
     ? ` | Tipos: ${printOrderTypes.join(',')}`
     : '';
   console.log(
-    `Print-worker iniciado | Sucursal: ${BRANCH_NAME}${areaLabel}${orderTypesLabel} | ${modeLabel}`,
+    `Print-worker iniciado | Sucursal: ${BRANCH_NAME}${areaLabel}${orderTypesLabel} | Esquema: ${dbSchema} | ${modeLabel}`,
   );
 
   // Latido a Supabase DESACTIVADO: la conexión de las Pis se revisa en la
